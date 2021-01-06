@@ -42,6 +42,10 @@ import org.jxmpp.jid.impl.*;
 import org.jxmpp.jid.parts.*;
 import org.osgi.framework.*;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
@@ -140,7 +144,7 @@ public class JitsiMeetConferenceImpl
     /**
      * Conference room chat instance.
      */
-    private volatile ChatRoom2 chatRoom;
+    private volatile ChatRoomExtension chatRoom;
 
     /**
      * Operation set used to handle Jingle sessions with conference
@@ -265,6 +269,10 @@ public class JitsiMeetConferenceImpl
      * See {@link JitsiMeetConference#includeInStatistics()}
      */
     private final boolean includeInStatistics;
+
+    private int veazzyRoomStatus = VeazzyRoomStatusIq.ROOM_STATUS_OPENED;
+    private String veazzyRoomManagerId = "00000000";
+    private String veazzyRoomFocalParticipantId = "00000000";
 
     private final BridgeSelectorEventHandler bridgeSelectorEventHandler = new BridgeSelectorEventHandler();
 
@@ -513,7 +521,7 @@ public class JitsiMeetConferenceImpl
     {
         logger.info("Joining the room: " + roomName);
 
-        chatRoom = (ChatRoom2) chatOpSet.findRoom(roomName.toString());
+        chatRoom = (ChatRoomExtension) chatOpSet.findRoom(roomName.toString());
         chatRoom.setConference(this);
 
         rolesAndPresence = new ChatRoomRoleAndPresence(this, chatRoom);
@@ -1098,7 +1106,7 @@ public class JitsiMeetConferenceImpl
     @Override
     public boolean isFocusMember(Jid mucJid)
     {
-        ChatRoom2 chatRoom = this.chatRoom;
+        ChatRoomExtension chatRoom = this.chatRoom;
         return mucJid != null
                 && chatRoom != null
                 && mucJid.equals(chatRoom.getLocalOccupantJid());
@@ -1240,6 +1248,78 @@ public class JitsiMeetConferenceImpl
             if (participant.isSessionEstablished())
             {
                 JingleSession jingleSession = participant.getJingleSession();
+                logger.info("Terminating: " + contactAddress);
+
+                if(participants != null) {
+
+                    if(participants.size() == 1) {
+                        // The last participant is being terminated
+
+                        if(chatRoom != null && chatRoom.getRoomJid() != null) {
+
+                            String room_name = chatRoom.getRoomJid().toString();
+                            //String room_name = fromJid.toString();
+
+                            if(room_name.contains("@")) {
+                                room_name = room_name.substring(0, room_name.indexOf("@"));
+                            }
+
+                            String cmd = "/usr/share/jitsi-meet/stream.sh " + room_name + " 0";
+                            logger.info("All participant left running cmd " + cmd);
+                            runScriptCmd(cmd);
+                        }
+                    }
+                    else if(participants.size() > 1) {
+                        // A participant is being terminated, we need to check if he's the roomManager
+
+                        logger.info("There is more than one participant left before terminating");
+
+                        if(chatRoom != null && chatRoom.getRoomJid() != null) {
+
+                            String shortRoomName = chatRoom.getRoomJid().toString();
+                            if(shortRoomName.contains("@")) {
+                                shortRoomName = shortRoomName.substring(0, shortRoomName.indexOf("@"));
+                            }
+                            if(contactAddress != null && contactAddress.toString() != null
+                                    && chatRoom != null) { //&& chatRoom.getVeazzyRoomManagerId() != null
+
+                                logger.debug("Terminating" + " checking isVeazzyRoomManager for "
+                                        + shortRoomName + " - " + contactAddress.toString());
+
+                                String participantShortId = contactAddress.toString();
+
+                                if(participantShortId.contains("/")) {
+                                    int ind = participantShortId.lastIndexOf("/");
+                                    ind += 1;
+                                    participantShortId = participantShortId.substring(ind);
+                                }
+
+                                String roomManagerId = getVeazzyRoomManagerId();
+                                if(participantShortId != null && roomManagerId != null) {
+
+                                    logger.debug("Check isVeazzyRoomManager() for participantShortId "
+                                            + participantShortId + " (" + contactAddress.toString() + ")"
+                                            + " - Manager " + roomManagerId);
+
+                                    if(roomManagerId.equals(participantShortId)) {
+                                        String cmd = "/usr/share/jitsi-meet/stream.sh " + shortRoomName + " 1";
+                                        logger.info("Participant was terminate running cmd " + cmd);
+                                        runScriptCmd(cmd);
+                                    }
+                                }
+                            }
+                            else if(chatRoom == null) {
+                                logger.debug("Terminating" + " but contactAddress is null");
+                            }
+                        }
+                        else if(chatRoom == null) {
+                            logger.debug("Terminating" + " but chatRoom is null");
+                        }
+                    }
+                }
+                else if(participants == null) {
+                    logger.debug("Terminating" + " but participants is null");
+                }
 
                 jingle.terminateSession(jingleSession, reason, message, sendSessionTerminate);
 
@@ -1332,6 +1412,20 @@ public class JitsiMeetConferenceImpl
         {
             if (participant.getChatMember().equals(chatMember))
             {
+                return participant;
+            }
+        }
+        return null;
+    }
+
+    public Participant findParticipantForRoomJidForRoomStatusRequest(Jid roomJid) {
+        logger.info("findParticipantForRoomJidForRoomStatusRequest()" + " looking for Jid - " + roomJid + ".");
+
+        for (Participant participant : participants) {
+
+            logger.info("listOfCurrentOccupantJid() " + participant.getChatMember().getOccupantJid() + ".");
+
+            if (participant.getChatMember().getOccupantJid().equals(roomJid)) {
                 return participant;
             }
         }
@@ -2220,7 +2314,7 @@ public class JitsiMeetConferenceImpl
      * @param doMute the new audio mute status to set.
      * @return <tt>true</tt> if status has been set successfully.
      */
-    public boolean handleMuteRequest(Jid fromJid, Jid toBeMutedJid, boolean doMute)
+    public boolean handleMuteRequest(Jid fromJid, Jid toBeMutedJid, boolean doMute, boolean blockAudioControl)
     {
         Participant principal = findParticipantForRoomJid(fromJid);
         if (principal == null)
@@ -2277,10 +2371,337 @@ public class JitsiMeetConferenceImpl
         if (succeeded)
         {
             participant.setMuted(doMute);
+            participant.setBlockAudioStatus(blockAudioControl);
         }
 
         return succeeded;
     }
+
+    public boolean handleBlindRequest(Jid fromJid, Jid toBeBlindedJid, boolean doBlind, boolean blockVideoControl) {
+        Participant principal = findParticipantForRoomJid(fromJid);
+        if (principal == null) {
+            logger.warn("Failed to perform blind operation - " + fromJid + " not exists in the conference.");
+            return false;
+        }
+        // Only moderators can blind others
+        if (!fromJid.equals(toBeBlindedJid)
+                && ChatRoomMemberRole.MODERATOR.compareTo(principal.getChatMember().getRole()) < 0) {
+            logger.warn("Permission denied for blind operation from " + fromJid);
+            return false;
+        }
+
+        Participant participant = findParticipantForRoomJid(toBeBlindedJid);
+        if (participant == null) {
+            logger.warn("Participant for jid: " + toBeBlindedJid + " not found");
+            return false;
+        }
+
+        //if (doBlind && participant.isSipGateway() && !participant.hasAudioMuteSupport()) {
+        //    logger.warn("Blocking blind request to jigasi. " + "Muting SIP participants is disabled.");
+        //    return false;
+        //}
+
+        if (doBlind && participant.isJibri()) {
+            logger.warn("Blocking blind request to jibri. ");
+            return false;
+        }
+
+        logger.info("Will " + (doBlind ? "blind" : "unblind") + " " + toBeBlindedJid + " on behalf of " + fromJid);
+
+        BridgeSession bridgeSession = findBridgeSession(participant);
+        boolean succeeded = bridgeSession != null
+                && bridgeSession.colibriConference.blindParticipant(participant.getColibriChannelsInfo(), doBlind);
+
+        if (succeeded) {
+            participant.setBlinded(doBlind);
+            participant.setBlockVideoStatus(blockVideoControl);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Handles mute request sent from participants.
+     *
+     * @param fromJid MUC jid of the participant that requested mute status
+     * change.
+     * @param veazzyRoomStatus the new audio mute status to set.
+     * @return <tt>true</tt> if status has been set successfully.
+     */
+    public boolean handleRoomStatusRequest(Jid fromJid, int veazzyRoomStatus) {
+
+        if (participants != null && !participants.isEmpty()) {
+
+            Participant principal = findParticipantForRoomJidForRoomStatusRequest(fromJid);
+            if (principal == null) {
+                logger.warn("Failed to perform roomStatus operation - " + fromJid + " not exists in the conference.");
+
+                return false;
+            }
+            // Only moderators can mute others
+            // if (//!fromJid.equals(toBeMutedJid) &&
+            if (ChatRoomMemberRole.MODERATOR.compareTo(principal.getChatMember().getRole()) < 0) {
+                logger.warn("Permission denied for roomStatus operation from " + fromJid);
+                return false;
+            }
+        } else {
+            if (participants == null || (participants != null && participants.isEmpty())) {
+                if (participants == null) {
+                    logger.info("Participants NULL, nobody in the room - Not looking for " + fromJid);
+                }
+                if (participants != null && participants.isEmpty()) {
+                    logger.info("Participants empty, nobody in the room - Not looking for " + fromJid);
+                }
+                logger.info("Looking for xwpp chat member instead with " + fromJid);
+                XmppChatMember member = findMember(fromJid);
+                if (member != null) {
+                    logger.info("Found member " + member.getContactAddress() + " - " + member.getDisplayName());
+                    if (ChatRoomMemberRole.ADMINISTRATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is ADMINISTRATOR");
+                    }
+                    if (ChatRoomMemberRole.GUEST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is GUEST");
+                    }
+                    if (ChatRoomMemberRole.MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MODERATOR");
+                    }
+                    if (ChatRoomMemberRole.OUTCAST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OUTCAST");
+                    }
+                    if (ChatRoomMemberRole.OWNER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OWNER");
+                    }
+                    if (ChatRoomMemberRole.SILENT_MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is SILENT_MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) < 0) {
+                        logger.warn("Permission denied for roomStatus operation from " + fromJid);
+                        return false;
+                    }
+                } else {
+                    logger.info("Member not found");
+                }
+            } else {
+                logger.info("Should not be here");
+            }
+        }
+
+        logger.info("Will " + (veazzyRoomStatus == VeazzyRoomStatusIq.ROOM_STATUS_OPENED ? "open room" : "close room") + " on behalf of " + fromJid);
+
+        //chatRoom.setVeazzyRoomStatus(doRoomStatusOpen);
+        setVeazzyRoomStatus(veazzyRoomStatus);
+        return true;
+    }
+
+    public boolean handleRoomManagerIdRequest(Jid fromJid, String roomManagerId) {
+
+        if (participants != null && !participants.isEmpty()) {
+
+            Participant principal = findParticipantForRoomJidForRoomStatusRequest(fromJid);
+            if (principal == null) {
+                logger.warn("Failed to perform ModeratorId operation - " + fromJid + " not exists in the conference.");
+
+                return false;
+            }
+            // Only moderators can mute others
+            //if (//!fromJid.equals(toBeMutedJid) &&
+            if (ChatRoomMemberRole.MODERATOR.compareTo(principal.getChatMember().getRole()) < 0) {
+                logger.warn("Permission denied for ModeratorId operation from " + fromJid);
+                return false;
+            }
+        } else {
+            if (participants == null || (participants != null && participants.isEmpty())) {
+                if (participants == null) {
+                    logger.info("Participants NULL, nobody in the room - Not looking for " + fromJid);
+                }
+                if (participants != null && participants.isEmpty()) {
+                    logger.info("Participants empty, nobody in the room - Not looking for " + fromJid);
+                }
+                logger.info("Looking for xwpp chat member instead with " + fromJid);
+                XmppChatMember member = findMember(fromJid);
+                if (member != null) {
+                    logger.info("Found member " + member.getContactAddress() + " - " + member.getDisplayName());
+                    if (ChatRoomMemberRole.ADMINISTRATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is ADMINISTRATOR");
+                    }
+                    if (ChatRoomMemberRole.GUEST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is GUEST");
+                    }
+                    if (ChatRoomMemberRole.MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MODERATOR");
+                    }
+                    if (ChatRoomMemberRole.OUTCAST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OUTCAST");
+                    }
+                    if (ChatRoomMemberRole.OWNER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OWNER");
+                    }
+                    if (ChatRoomMemberRole.SILENT_MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is SILENT_MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) < 0) {
+                        logger.warn("Permission denied for roomStatus operation from " + fromJid);
+                        return false;
+                    }
+                } else {
+                    logger.info("Member not found");
+                }
+            } else {
+                logger.info("Should not be here");
+            }
+        }
+
+        //chatRoom.setVeazzyRoomManagerId(roomManagerId);
+        setVeazzyRoomManagerId(roomManagerId);
+        return true;
+    }
+
+    public boolean handleFocalParticipantIdRequest(Jid fromJid, String roomFocalParticipantId) {
+
+        if (participants != null && !participants.isEmpty()) {
+
+            Participant principal = findParticipantForRoomJidForRoomStatusRequest(fromJid);
+            if (principal == null) {
+                logger.warn("Failed to perform ParticipantId operation - " + fromJid + " not exists in the conference.");
+
+                return false;
+            }
+            // Only moderators can mute others
+            //if (//!fromJid.equals(toBeMutedJid) &&
+            if (ChatRoomMemberRole.MODERATOR.compareTo(principal.getChatMember().getRole()) < 0) {
+                logger.warn("Permission denied for ParticipantId operation from " + fromJid);
+                return false;
+            }
+        } else {
+            if (participants == null || (participants != null && participants.isEmpty())) {
+                if (participants == null) {
+                    logger.info("Participants NULL, nobody in the room - Not looking for " + fromJid);
+                }
+                if (participants != null && participants.isEmpty()) {
+                    logger.info("Participants empty, nobody in the room - Not looking for " + fromJid);
+                }
+                logger.info("Looking for xwpp chat member instead with " + fromJid);
+                XmppChatMember member = findMember(fromJid);
+                if (member != null) {
+                    logger.info("Found member " + member.getContactAddress() + " - " + member.getDisplayName());
+                    if (ChatRoomMemberRole.ADMINISTRATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is ADMINISTRATOR");
+                    }
+                    if (ChatRoomMemberRole.GUEST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is GUEST");
+                    }
+                    if (ChatRoomMemberRole.MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is MODERATOR");
+                    }
+                    if (ChatRoomMemberRole.OUTCAST.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OUTCAST");
+                    }
+                    if (ChatRoomMemberRole.OWNER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is OWNER");
+                    }
+                    if (ChatRoomMemberRole.SILENT_MEMBER.compareTo(member.getRole()) == 0) {
+                        logger.info("This member is SILENT_MEMBER");
+                    }
+                    if (ChatRoomMemberRole.MODERATOR.compareTo(member.getRole()) < 0) {
+                        logger.warn("Permission denied for roomStatus operation from " + fromJid);
+                        return false;
+                    }
+                } else {
+                    logger.info("Member not found");
+                }
+            } else {
+                logger.info("Should not be here");
+            }
+        }
+
+        //chatRoom.setVeazzyMainScreenParticipantId(roomFocalParticipantId);
+        setVeazzyRoomFocalParticipantId(roomFocalParticipantId);
+
+        return true;
+    }
+
+    public boolean handleAdvertisingStreamIdRequest(Jid jid, Jid fromJid, int streamStatus) {
+
+        logger.info("handleStreamIdRequest");
+
+        // if true
+        // /usr/share/jitsi-meet/stream.sh $room_name 1
+
+        // if false
+        // /usr/share/jitsi-meet/stream.sh $room_name 0
+
+        String room_name = jid.toString();
+        //String room_name = fromJid.toString();
+
+        if(room_name.contains("@")) {
+            room_name = room_name.substring(0, room_name.indexOf("@"));
+        }
+
+        String cmd = "/usr/share/jitsi-meet/stream.sh " + room_name;
+
+        switch(streamStatus) {
+            case VeazzyAdvertisingStreamIq.STREAM_STATUS_START:
+                cmd += " " + VeazzyAdvertisingStreamIq.STREAM_STATUS_START;
+                logger.info("handleStreamId Boolean.TRUE running cmd " + cmd);
+                runScriptCmd(cmd);
+                break;
+            case VeazzyAdvertisingStreamIq.STREAM_STATUS_STOP:
+                cmd += " " + VeazzyAdvertisingStreamIq.STREAM_STATUS_STOP;
+                logger.info("handleStreamId Boolean.FALSE running cmd " + cmd);
+                runScriptCmd(cmd);
+                break;
+        }
+        return true;
+    }
+
+    public boolean handleQuizQuestionIdRequest(Jid jid, Jid fromJid) {
+
+        logger.info("handleQuizQuestionIdRequest");
+
+        return true;
+    }
+    public boolean handleQuizAnswerIdRequest(Jid jid, Jid fromJid) {
+
+        logger.info("handleQuizAnswerIdRequest");
+
+        return true;
+    }
+
+    public boolean handleDonationAmountRequest(Jid jid, Jid fromJid) {
+
+        logger.info("handleDonationAmountRequest");
+
+        return true;
+    }
+
+    public boolean handleRaiseHandRequest(Jid jid, Jid fromJid) {
+
+        logger.info("handleRaiseHandRequest");
+
+        return true;
+    }
+
+    //int getVeazzyRoomStatus() {
+    //    return chatRoom.getVeazzyRoomStatus();
+    //}
+
+    //String getVeazzyRoomManagerId() {
+    //    return chatRoom.getVeazzyRoomManagerId();
+    //}
+
+    //String getVeazzyRoomFocalParticipantId() {
+    //    return chatRoom.getVeazzyRoomFocalParticipantId();
+    //}
 
     /**
      * Returns current participants count. A participant is chat member who has
@@ -2403,7 +2824,7 @@ public class JitsiMeetConferenceImpl
      * {@inheritDoc}
      */
     @Override
-    public ChatRoom2 getChatRoom()
+    public ChatRoomExtension getChatRoom()
     {
         return chatRoom;
     }
@@ -3057,5 +3478,115 @@ public class JitsiMeetConferenceImpl
         {
             onBridgeUp(bridge.getJid());
         }
+    }
+
+    // https://stackoverflow.com/questions/525212/how-to-run-unix-shell-script-from-java-code
+
+    public void runScriptCmd(String myCommand){
+        try {
+            Runtime.getRuntime().exec(myCommand);
+        } catch (IOException ex) {
+            Logger.getLogger(JitsiMeetConferenceImpl.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    public static void runCommandFile1(String filePath) throws IOException{
+        File file = new File(filePath);
+        if(!file.isFile()){
+            throw new IllegalArgumentException("The file " + filePath + " does not exist");
+        }
+        if(isLinux()){
+            Runtime.getRuntime().exec(new String[] {"/bin/sh", "-c", filePath}, null);
+        }else if(isWindows()){
+            Runtime.getRuntime().exec("cmd /c start " + filePath);
+        }
+    }
+
+    public static boolean isLinux(){
+        String os = System.getProperty("os.name");
+        return os.toLowerCase().indexOf("linux") >= 0;
+    }
+
+    public static boolean isWindows(){
+        String os = System.getProperty("os.name");
+        return os.toLowerCase().indexOf("windows") >= 0;
+    }
+
+    public void runCommandFile2(String fileName) { //"myshellScript.sh"
+        ProcessBuilder pb = new ProcessBuilder(fileName, "myArg1", "myArg2");
+        Map<String, String> env = pb.environment();
+        env.put("VAR1", "myValue");
+        env.remove("OTHERVAR");
+        env.put("VAR2", env.get("VAR1") + "suffix");
+        pb.directory(new File("myDir"));
+        try {
+            Process p = pb.start();
+        } catch (IOException ex) {
+            Logger.getLogger(JitsiMeetConferenceImpl.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+    public static void readBashScript() {
+        try {
+            Process proc = Runtime.getRuntime().exec("/home/destino/workspace/JavaProject/listing.sh /"); //Whatever you want to execute
+            BufferedReader read = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+            try {
+                proc.waitFor();
+            } catch (InterruptedException e) {
+                System.out.println(e.getMessage());
+            }
+            while (read.ready()) {
+                System.out.println(read.readLine());
+            }
+        } catch (IOException e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    /**
+     * @return the veazzyRoomStatus
+     */
+    //@Override
+    public int getVeazzyRoomStatus() {
+        return veazzyRoomStatus;
+    }
+
+    /**
+     * @param veazzyRoomStatus the veazzyRoomStatus to set
+     */
+    //@Override
+    public void setVeazzyRoomStatus(int veazzyRoomStatus) {
+        this.veazzyRoomStatus = veazzyRoomStatus;
+    }
+
+    /**
+     * @return the veazzyRoomManagerId
+     */
+    //@Override
+    public String getVeazzyRoomManagerId() {
+        return veazzyRoomManagerId;
+    }
+
+    /**
+     * @param veazzyRoomManagerId to set
+     */
+    //@Override
+    public void setVeazzyRoomManagerId(String veazzyRoomManagerId) {
+        this.veazzyRoomManagerId = veazzyRoomManagerId;
+    }
+
+    /**
+     * @return the veazzyRoomFocalParticipantId
+     */
+    //@Override
+    public String getVeazzyRoomFocalParticipantId() {
+        return veazzyRoomFocalParticipantId;
+    }
+
+    /**
+     * @param veazzyRoomFocalParticipantId to set
+     */
+    //@Override
+    public void setVeazzyRoomFocalParticipantId(String veazzyRoomFocalParticipantId) {
+        this.veazzyRoomFocalParticipantId = veazzyRoomFocalParticipantId;
     }
 }

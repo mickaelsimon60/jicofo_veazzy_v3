@@ -47,7 +47,8 @@ public class MuteIqProviderTest
         String iqXml =
             "<iq to='t' from='f' type='set'>" +
                 "<mute xmlns='http://jitsi.org/jitmeet/audio'" +
-                     " jid='somejid' >" +
+                     " jid='somejid'" +
+                    " blockaudiocontrol='true' >" +
                 "true" +
                 "</mute>" +
                 "</iq>";
@@ -60,6 +61,7 @@ public class MuteIqProviderTest
         assertEquals("t", mute.getTo().toString());
 
         assertEquals("somejid", mute.getJid().toString());
+        assertEquals("true", mute.getBlockAudioControl().toString());
 
         assertEquals(true, mute.getMute());
     }
@@ -75,14 +77,17 @@ public class MuteIqProviderTest
         muteIq.setFrom(JidCreate.from("fromJid"));
 
         muteIq.setJid(JidCreate.from("mucjid1234"));
+        muteIq.setBlockAudioControl(true);
+
         muteIq.setMute(true);
 
         assertXMLEqual(new Diff("<iq to='tojid' from='fromjid' " +
                          "type='get' id='123xyz'>" +
                          "<mute " +
                          "xmlns='http://jitsi.org/jitmeet/audio' " +
-                         "jid='mucjid1234'" +
-                         ">true</mute>" +
+                         "jid='mucjid1234' " +
+                        "blockaudiocontrol='true' " +
+                        ">true</mute>" +
                          "</iq>",
                      muteIq.toXML().toString()), true);
     }

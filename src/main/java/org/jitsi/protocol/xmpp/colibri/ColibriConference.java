@@ -265,6 +265,8 @@ public interface ColibriConference
      */
     boolean muteParticipant(ColibriConferenceIQ channelsInfo, boolean mute);
 
+    boolean blindParticipant(ColibriConferenceIQ channelsInfo, boolean blind);
+
     /**
      * Disposes of any resources allocated by this instance. Once disposed this
      * instance must not be used anymore.

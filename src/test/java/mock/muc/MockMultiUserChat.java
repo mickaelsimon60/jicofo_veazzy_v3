@@ -41,7 +41,7 @@ import java.util.concurrent.*;
  */
 public class MockMultiUserChat
     extends AbstractChatRoom
-    implements ChatRoom2
+    implements ChatRoomExtension
 {
     /**
      * The logger

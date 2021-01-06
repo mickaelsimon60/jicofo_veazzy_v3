@@ -20,6 +20,7 @@ package org.jitsi.jicofo.xmpp;
 import org.jetbrains.annotations.*;
 import org.jitsi.jicofo.*;
 import org.jitsi.jicofo.bridge.Bridge;
+import org.jitsi.jicofo.database.VeazzyRoomStatus;
 import org.jitsi.xmpp.extensions.rayo.*;
 import net.java.sip.communicator.service.protocol.*;
 
@@ -59,9 +60,27 @@ public class IqHandler
 
     private final MuteIqHandler muteIqHandler = new MuteIqHandler();
     private final DialIqHandler dialIqHandler = new DialIqHandler();
+
+    private VeazzyBlindIqHandler veazzyBlindIqHandler = new VeazzyBlindIqHandler();
+    private VeazzyRoomStatusIqHandler veazzyRoomStatusIqHandler = new VeazzyRoomStatusIqHandler();
+    private VeazzyRoomManagerIqHandler veazzyRoomManagerIqHandler = new VeazzyRoomManagerIqHandler();
+    private VeazzyRoomFocalParticipantIqHandler veazzyRoomFocalParticipantIqHandler = new VeazzyRoomFocalParticipantIqHandler();
+    private VeazzyAdvertisingStreamIqHandler veazzyAdvertisingStreamIqHandler = new VeazzyAdvertisingStreamIqHandler();
+    private VeazzyQuizQuestionIqHandler veazzyQuizQuestionIqHandler = new VeazzyQuizQuestionIqHandler();
+    private VeazzyQuizAnswerIqHandler veazzyQuizAnswerIqHandler = new VeazzyQuizAnswerIqHandler();
+    private VeazzyDonationAmountIqHandler veazzyDonationAmountIqHandler = new VeazzyDonationAmountIqHandler();
+    private VeazzyRaiseHandIqHandler veazzyRaiseHandIqHandler = new VeazzyRaiseHandIqHandler();
+
     @NotNull
     private final ConferenceIqHandler conferenceIqHandler;
     private final AuthenticationIqHandler authenticationIqHandler;
+
+    /**
+     * The currently used DB connection.
+     */
+    private JDBCPostgreSQL clientSql;
+
+    private int veazzyRoomStatusFromDb;
 
     /**
      * @param focusManager The <tt>FocusManager</tt> to use to access active conferences.
@@ -76,6 +95,17 @@ public class IqHandler
         this.authenticationIqHandler = authenticationIqHandler;
 
         MuteIqProvider.registerMuteIqProvider();
+
+        VeazzyBlindIqProvider.registerVeazzyBlindIqProvider();
+        VeazzyRoomStatusIqProvider.registerVeazzyRoomStatusIqProvider();
+        VeazzyRoomManagerIqProvider.registerVeazzyRoomManagerIqProvider();
+        VeazzyRoomFocalParticipantIqProvider.registerVeazzyRoomFocalParticipantIqProvider();
+        VeazzyAdvertisingStreamIqProvider.registerVeazzyAdvertisingStreamIqProvider();
+        VeazzyQuizQuestionIqProvider.registerVeazzyQuizQuestionIqProvider();
+        VeazzyQuizAnswerIqProvider.registerVeazzyQuizAnswerIqProvider();
+        VeazzyDonationAmountIqProvider.registerVeazzyDonationAmountIqProvider();
+        VeazzyRaiseHandIqProvider.registerVeazzyRaiseHandIqProvider();
+
         new RayoIqProvider().registerRayoIQs();
         StartMutedProvider.registerStartMutedProvider();
     }
@@ -87,6 +117,9 @@ public class IqHandler
     {
         this.connection = connection;
 
+        clientSql = new JDBCPostgreSQL();
+        veazzyRoomStatusFromDb = VeazzyRoomStatus.ROOM_STATUS_OPENED;
+
         logger.info("Registering IQ handlers with XmppConnection.");
         connection.registerIQRequestHandler(muteIqHandler);
         connection.registerIQRequestHandler(dialIqHandler);
@@ -96,6 +129,17 @@ public class IqHandler
             connection.registerIQRequestHandler(authenticationIqHandler.getLoginUrlIqHandler());
             connection.registerIQRequestHandler(authenticationIqHandler.getLogoutIqHandler());
         }
+
+        connection.registerIQRequestHandler(veazzyBlindIqHandler);
+        connection.registerIQRequestHandler(veazzyRoomStatusIqHandler);
+        connection.registerIQRequestHandler(veazzyRoomManagerIqHandler);
+        connection.registerIQRequestHandler(veazzyRoomFocalParticipantIqHandler);
+        connection.registerIQRequestHandler(veazzyAdvertisingStreamIqHandler);
+        connection.registerIQRequestHandler(veazzyQuizQuestionIqHandler);
+        connection.registerIQRequestHandler(veazzyQuizAnswerIqHandler);
+        connection.registerIQRequestHandler(veazzyDonationAmountIqHandler);
+        connection.registerIQRequestHandler(veazzyRaiseHandIqHandler);
+
     }
 
     private class MuteIqHandler extends AbstractIqRequestHandler
@@ -113,6 +157,149 @@ public class IqHandler
         public IQ handleIQRequest(IQ iqRequest)
         {
             return handleMuteIq((MuteIq) iqRequest);
+        }
+    }
+
+    private class VeazzyBlindIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyBlindIqHandler() {
+            super(VeazzyBlindIq.ELEMENT_NAME,
+                    VeazzyBlindIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleVeazzyBlindIq((VeazzyBlindIq) iqRequest);
+        }
+    }
+
+    private class VeazzyRoomStatusIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyRoomStatusIqHandler() {
+            super(
+                    VeazzyRoomStatusIq.ELEMENT_NAME,
+                    VeazzyRoomStatusIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleRoomStatusIq((VeazzyRoomStatusIq) iqRequest);
+        }
+    }
+
+    private class VeazzyRoomManagerIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyRoomManagerIqHandler() {
+            super(
+                    VeazzyRoomManagerIq.ELEMENT_NAME,
+                    VeazzyRoomManagerIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleRoomManagerIq((VeazzyRoomManagerIq) iqRequest);
+        }
+    }
+
+    private class VeazzyRoomFocalParticipantIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyRoomFocalParticipantIqHandler() {
+            super(
+                    VeazzyRoomFocalParticipantIq.ELEMENT_NAME,
+                    VeazzyRoomFocalParticipantIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleRoomFocalParticipantIq((VeazzyRoomFocalParticipantIq) iqRequest);
+        }
+    }
+
+    private class VeazzyAdvertisingStreamIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyAdvertisingStreamIqHandler() {
+            super(
+                    VeazzyAdvertisingStreamIq.ELEMENT_NAME,
+                    VeazzyAdvertisingStreamIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleAdvertisingStreamIq((VeazzyAdvertisingStreamIq) iqRequest);
+        }
+    }
+
+    private class VeazzyQuizQuestionIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyQuizQuestionIqHandler() {
+            super(
+                    VeazzyQuizQuestionIq.ELEMENT_NAME,
+                    VeazzyQuizQuestionIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleQuizQuestionIq((VeazzyQuizQuestionIq) iqRequest);
+        }
+    }
+
+    private class VeazzyQuizAnswerIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyQuizAnswerIqHandler() {
+            super(
+                    VeazzyQuizAnswerIq.ELEMENT_NAME,
+                    VeazzyQuizAnswerIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleQuizAnswerIq((VeazzyQuizAnswerIq) iqRequest);
+        }
+    }
+
+    private class VeazzyDonationAmountIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyDonationAmountIqHandler() {
+            super(
+                    VeazzyDonationAmountIq.ELEMENT_NAME,
+                    VeazzyDonationAmountIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleDonationAmountIq((VeazzyDonationAmountIq) iqRequest);
+        }
+    }
+
+    private class VeazzyRaiseHandIqHandler extends AbstractIqRequestHandler {
+
+        VeazzyRaiseHandIqHandler() {
+            super(
+                    VeazzyRaiseHandIq.ELEMENT_NAME,
+                    VeazzyRaiseHandIq.NAMESPACE,
+                    IQ.Type.set,
+                    IQRequestHandler.Mode.sync);
+        }
+
+        @Override
+        public IQ handleIQRequest(IQ iqRequest) {
+            return handleRaiseHandIq((VeazzyRaiseHandIq) iqRequest);
         }
     }
 
@@ -145,6 +332,17 @@ public class IqHandler
         {
             connection.unregisterIQRequestHandler(muteIqHandler);
             connection.unregisterIQRequestHandler(dialIqHandler);
+
+            connection.unregisterIQRequestHandler(veazzyBlindIqHandler);
+            connection.unregisterIQRequestHandler(veazzyRoomStatusIqHandler);
+            connection.unregisterIQRequestHandler(veazzyRoomManagerIqHandler);
+            connection.unregisterIQRequestHandler(veazzyRoomFocalParticipantIqHandler);
+            connection.unregisterIQRequestHandler(veazzyAdvertisingStreamIqHandler);
+            connection.unregisterIQRequestHandler(veazzyQuizQuestionIqHandler);
+            connection.unregisterIQRequestHandler(veazzyQuizAnswerIqHandler);
+            connection.unregisterIQRequestHandler(veazzyDonationAmountIqHandler);
+            connection.unregisterIQRequestHandler(veazzyRaiseHandIqHandler);
+
             connection = null;
         }
     }
@@ -159,9 +357,20 @@ public class IqHandler
         return focusManager.getConference(roomName);
     }
 
+    private EntityBareJid getConferenceName(Jid mucJid) {
+        EntityBareJid roomName = mucJid.asEntityBareJidIfPossible();
+        if (roomName == null) {
+            return null;
+        }
+        return roomName;
+    }
+
     private IQ handleMuteIq(MuteIq muteIq)
     {
         Boolean doMute = muteIq.getMute();
+        Boolean blockAudioControl = muteIq.getBlockAudioControl();
+        logger.info("Block Audio Control is " + blockAudioControl);
+
         Jid jid = muteIq.getJid();
 
         if (doMute == null || jid == null)
@@ -179,7 +388,7 @@ public class IqHandler
 
         IQ result;
 
-        if (conference.handleMuteRequest(muteIq.getFrom(), jid, doMute))
+        if (conference.handleMuteRequest(muteIq.getFrom(), jid, doMute, blockAudioControl))
         {
             result = IQ.createResultIQ(muteIq);
 
@@ -189,6 +398,7 @@ public class IqHandler
                 muteStatusUpdate.setActor(from);
                 muteStatusUpdate.setType(IQ.Type.set);
                 muteStatusUpdate.setTo(jid);
+                muteStatusUpdate.setBlockAudioControl(blockAudioControl);
 
                 muteStatusUpdate.setMute(doMute);
 
@@ -198,6 +408,564 @@ public class IqHandler
         else
         {
             result = IQ.createErrorResponse(muteIq, XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+
+    private IQ handleVeazzyBlindIq(VeazzyBlindIq blindIq) {
+
+        Boolean doBlind = blindIq.getDoBlind();
+        Boolean blockVideoControl = blindIq.getBlockVideoControl();
+        logger.info("Block Video Control is " + blockVideoControl);
+
+        Jid jid = blindIq.getJid();
+
+        if (doBlind == null || jid == null) {
+            return IQ.createErrorResponse(blindIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = blindIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Blind error: room not found for JID: " + from);
+            return IQ.createErrorResponse(blindIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        if (conference.handleBlindRequest(blindIq.getFrom(), jid, doBlind, blockVideoControl)) {
+            result = IQ.createResultIQ(blindIq);
+
+            if (!blindIq.getFrom().equals(jid)) {
+                logger.info("Blind: " + doBlind);
+                VeazzyBlindIq blindStatusUpdate = new VeazzyBlindIq();
+                blindStatusUpdate.setActor(from);
+                blindStatusUpdate.setType(IQ.Type.set);
+                blindStatusUpdate.setTo(jid);
+                blindStatusUpdate.setBlockVideoControl(blockVideoControl);
+
+                blindStatusUpdate.setDoBlind(doBlind);
+
+                connection.sendStanza(blindStatusUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    blindIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+    private IQ handleRoomStatusIq(VeazzyRoomStatusIq roomStatusIq) {
+
+        int veazzyRoomStatus = roomStatusIq.getRoomStatus();
+        Boolean checkRequest = roomStatusIq.isCheckRoomStatusRequest();
+
+        Jid jid = roomStatusIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(roomStatusIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        String confName = getConferenceName(jid).toString();
+        logger.info("Room Name is " + confName);
+
+        boolean check = false;
+        if (checkRequest == null) {
+            logger.debug("checkRequest null");
+            return IQ.createErrorResponse(roomStatusIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+        else {
+            check = checkRequest;
+            logger.info("Asking for room status checkRequest: " + check);
+
+            if(check) {
+
+                if (confName != null) {
+                    VeazzyRoomStatus roomStatus = clientSql.getRoomStatusFromDB(confName);
+                    if(roomStatus != null) {
+                        veazzyRoomStatusFromDb = roomStatus.getStatus();
+                        logger.info("Room Status From DB is " + veazzyRoomStatusFromDb);
+                    }
+                    else {
+                        logger.info("Room Status From DB not found");
+                    }
+                }
+            }
+        }
+
+        Jid from = roomStatusIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Room status error: room not found for JID: " + from);
+            return IQ.createErrorResponse(roomStatusIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        if (!check) {
+
+            if (conference.handleRoomStatusRequest(roomStatusIq.getFrom(), veazzyRoomStatus)) {
+                result = IQ.createResultIQ(roomStatusIq);
+
+                if (roomStatusIq.getFrom().equals(jid)) {
+                    VeazzyRoomStatusIq roomStatusUpdate = new VeazzyRoomStatusIq();
+                    roomStatusUpdate.setActor(from);
+                    roomStatusUpdate.setType(IQ.Type.set);
+                    roomStatusUpdate.setTo(jid);
+
+                    roomStatusUpdate.setRoomStatus(veazzyRoomStatus);
+
+                    connection.sendStanza(roomStatusUpdate);
+
+                    //update DB
+                    if (confName != null) {
+                        VeazzyRoomStatus roomStatus = clientSql.getRoomStatusFromDB(confName);
+                        if(roomStatus != null) {
+                            //update
+                            roomStatus.setStatus(veazzyRoomStatus);
+                            clientSql.updateRoomStatusToDB(roomStatus);
+                            logger.info("Room Status updated for room " + roomStatus.getRoomName());
+                        }
+                        else {
+                            //create
+                            roomStatus = new VeazzyRoomStatus(confName, veazzyRoomStatus);
+                            clientSql.insertRoomStatusToDB(roomStatus);
+                            logger.info("Room Status created for room " + roomStatus.getRoomName());
+                        }
+                    }
+                }
+            } else {
+                result = IQ.createErrorResponse(
+                        roomStatusIq,
+                        XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+            }
+        } else {
+
+            int roomStatus = veazzyRoomStatusFromDb;
+            result = IQ.createResultIQ(roomStatusIq);
+
+            VeazzyRoomStatusIq roomStatusUpdate = new VeazzyRoomStatusIq();
+            roomStatusUpdate.setActor(from);
+            roomStatusUpdate.setType(IQ.Type.set);
+            roomStatusUpdate.setTo(jid);
+
+            roomStatusUpdate.setRoomStatus(roomStatus);
+
+            connection.sendStanza(roomStatusUpdate);
+        }
+
+        return result;
+    }
+
+    private IQ handleRoomManagerIq(VeazzyRoomManagerIq roomManagerIq) {
+
+        String roomManagerId = roomManagerIq.getRoomManagerId();
+        logger.info("RoomManagerId is " + roomManagerId);
+
+        Boolean roomManagerIdRequest = roomManagerIq.isCheckRoomManagerIdRequest();
+
+        Jid jid = roomManagerIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(roomManagerIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        if (roomManagerId == null && roomManagerIdRequest == null) {
+            logger.debug("roomManagerId and roomManagerIdRequest null");
+            return IQ.createErrorResponse(roomManagerIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = roomManagerIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Room Manager Id error: ID not found for JID: " + from);
+            return IQ.createErrorResponse(roomManagerIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        boolean check = false;
+        if (roomManagerIdRequest != null) {
+            check = roomManagerIdRequest;
+            logger.info("Asking for Room Manager id roomManagerIdRequest: " + check);
+        }
+
+        if (!check) {
+
+            if (conference.handleRoomManagerIdRequest(roomManagerIq.getFrom(), roomManagerId)) {
+                result = IQ.createResultIQ(roomManagerIq);
+
+                if (roomManagerIq.getFrom().equals(jid)) {
+                    VeazzyRoomManagerIq roomManagerUpdate = new VeazzyRoomManagerIq();
+                    roomManagerUpdate.setActor(from);
+                    roomManagerUpdate.setType(IQ.Type.set);
+                    roomManagerUpdate.setTo(jid);
+
+                    roomManagerUpdate.setRoomManagerId(roomManagerId);
+
+                    connection.sendStanza(roomManagerUpdate);
+
+                }
+            } else {
+                result = IQ.createErrorResponse(
+                        roomManagerIq,
+                        XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+            }
+        } else {
+
+            String managerId = conference.getVeazzyRoomManagerId();
+            result = IQ.createResultIQ(roomManagerIq);
+
+            VeazzyRoomManagerIq roomManagerUpdate = new VeazzyRoomManagerIq();
+            roomManagerUpdate.setActor(from);
+            roomManagerUpdate.setType(IQ.Type.set);
+            roomManagerUpdate.setTo(jid);
+
+            roomManagerUpdate.setRoomManagerId(managerId);
+
+            connection.sendStanza(roomManagerUpdate);
+        }
+
+        return result;
+    }
+
+    private IQ handleRoomFocalParticipantIq(VeazzyRoomFocalParticipantIq roomFocalParticipantIq) {
+
+        String roomFocalParticipantId = roomFocalParticipantIq.getRoomFocalParticipantId();
+        logger.info("RoomFocalParticipantId is " + roomFocalParticipantId);
+
+        Boolean roomFocalParticipantIdRequest = roomFocalParticipantIq.isCheckRoomFocalParticipantIdRequest();
+
+        Jid jid = roomFocalParticipantIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(roomFocalParticipantIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        if (roomFocalParticipantId == null && roomFocalParticipantIdRequest == null) {
+            logger.debug("roomFocalParticipantId and roomFocalParticipantIdRequest null");
+            return IQ.createErrorResponse(roomFocalParticipantIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = roomFocalParticipantIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Room Focal Participant Id error: ID not found for JID: " + from);
+            return IQ.createErrorResponse(roomFocalParticipantIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        boolean check = false;
+        if (roomFocalParticipantIdRequest != null) {
+            check = roomFocalParticipantIdRequest;
+            logger.info("Asking for Room Focal Participant id roomFocalParticipantIdRequest: " + check);
+        }
+
+        if (!check) {
+
+            if (conference.handleFocalParticipantIdRequest(roomFocalParticipantIq.getFrom(), roomFocalParticipantId)) {
+
+                result = IQ.createResultIQ(roomFocalParticipantIq);
+
+                if (!roomFocalParticipantIq.getFrom().equals(jid)) {
+                    VeazzyRoomFocalParticipantIq roomFocalParticipantUpdate = new VeazzyRoomFocalParticipantIq();
+                    roomFocalParticipantUpdate.setActor(from);
+                    roomFocalParticipantUpdate.setType(IQ.Type.set);
+                    roomFocalParticipantUpdate.setTo(jid);
+
+                    roomFocalParticipantUpdate.setRoomFocalParticipantId(roomFocalParticipantId);
+
+                    connection.sendStanza(roomFocalParticipantUpdate);
+
+                }
+            } else {
+                result = IQ.createErrorResponse(
+                        roomFocalParticipantIq,
+                        XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+            }
+        } else {
+
+            String focalParticipantId = conference.getVeazzyRoomFocalParticipantId();
+            result = IQ.createResultIQ(roomFocalParticipantIq);
+
+            VeazzyRoomFocalParticipantIq roomFocalParticipantUpdate = new VeazzyRoomFocalParticipantIq();
+            roomFocalParticipantUpdate.setActor(from);
+            roomFocalParticipantUpdate.setType(IQ.Type.set);
+            roomFocalParticipantUpdate.setTo(jid);
+
+            roomFocalParticipantUpdate.setRoomFocalParticipantId(focalParticipantId);
+
+            connection.sendStanza(roomFocalParticipantUpdate);
+        }
+
+        return result;
+    }
+
+    private IQ handleAdvertisingStreamIq(VeazzyAdvertisingStreamIq advertisingStreamIq) {
+
+        logger.info("handleStreamIq");
+        int streamStatus = advertisingStreamIq.getAdvertisingStreamStatus();
+
+        Jid jid = advertisingStreamIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(advertisingStreamIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = advertisingStreamIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Stream Id error: room not found for JID: " + from);
+            return IQ.createErrorResponse(advertisingStreamIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        logger.info("handleStreamIq condition OK");
+
+        if (conference.handleAdvertisingStreamIdRequest(jid, advertisingStreamIq.getFrom(), streamStatus)) {
+
+            result = IQ.createResultIQ(advertisingStreamIq);
+
+            if (!advertisingStreamIq.getFrom().equals(jid)) {
+
+                VeazzyAdvertisingStreamIq streamIdUpdate = new VeazzyAdvertisingStreamIq();
+                streamIdUpdate.setActor(from);
+                streamIdUpdate.setType(IQ.Type.set);
+                streamIdUpdate.setTo(jid);
+                streamIdUpdate.setAdvertisingStreamStatus(streamStatus);
+
+                connection.sendStanza(streamIdUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    advertisingStreamIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+    private IQ handleQuizQuestionIq(VeazzyQuizQuestionIq veazzyQuizQuestionIq) {
+
+        logger.info("veazzyQuizQuestionIq");
+
+        Jid jid = veazzyQuizQuestionIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(veazzyQuizQuestionIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = veazzyQuizQuestionIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Quiz Id error: room not found for JID: " + from);
+            return IQ.createErrorResponse(veazzyQuizQuestionIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        logger.info("handleQuizIq condition OK");
+
+        if (conference.handleQuizQuestionIdRequest(jid, veazzyQuizQuestionIq.getFrom())) {
+
+            result = IQ.createResultIQ(veazzyQuizQuestionIq);
+
+            if (!veazzyQuizQuestionIq.getFrom().equals(jid)) {
+
+                VeazzyQuizQuestionIq quizQuestionUpdate = new VeazzyQuizQuestionIq();
+                quizQuestionUpdate.setActor(from);
+                quizQuestionUpdate.setType(IQ.Type.set);
+                quizQuestionUpdate.setTo(jid);
+
+                quizQuestionUpdate.setQuestion(veazzyQuizQuestionIq.getQuestion());
+                quizQuestionUpdate.setAnswerA(veazzyQuizQuestionIq.getAnswerA());
+                quizQuestionUpdate.setAnswerB(veazzyQuizQuestionIq.getAnswerB());
+                quizQuestionUpdate.setAnswerC(veazzyQuizQuestionIq.getAnswerC());
+                quizQuestionUpdate.setAnswerD(veazzyQuizQuestionIq.getAnswerD());
+                quizQuestionUpdate.setStatusA(veazzyQuizQuestionIq.getStatusA());
+                quizQuestionUpdate.setStatusB(veazzyQuizQuestionIq.getStatusB());
+                quizQuestionUpdate.setStatusC(veazzyQuizQuestionIq.getStatusC());
+                quizQuestionUpdate.setStatusD(veazzyQuizQuestionIq.getStatusD());
+
+                connection.sendStanza(quizQuestionUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    veazzyQuizQuestionIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+    private IQ handleQuizAnswerIq(VeazzyQuizAnswerIq veazzyQuizAnswerIq) {
+
+        logger.info("veazzyQuizAnswerIq");
+
+        Jid jid = veazzyQuizAnswerIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(veazzyQuizAnswerIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = veazzyQuizAnswerIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Answer Id error: room not found for JID: " + from);
+            return IQ.createErrorResponse(veazzyQuizAnswerIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        logger.info("handleAnswerIq condition OK");
+
+        if (conference.handleQuizAnswerIdRequest(jid, veazzyQuizAnswerIq.getFrom())) {
+
+            result = IQ.createResultIQ(veazzyQuizAnswerIq);
+
+            if (!veazzyQuizAnswerIq.getFrom().equals(jid)) {
+
+                VeazzyQuizAnswerIq quizAnswerUpdate = new VeazzyQuizAnswerIq();
+                quizAnswerUpdate.setActor(from);
+                quizAnswerUpdate.setType(IQ.Type.set);
+                quizAnswerUpdate.setTo(jid);
+
+                quizAnswerUpdate.setAnswer(veazzyQuizAnswerIq.getAnswer());
+
+                connection.sendStanza(quizAnswerUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    veazzyQuizAnswerIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+    private IQ handleDonationAmountIq(VeazzyDonationAmountIq veazzyDonationAmountIq) {
+
+        logger.info("veazzyDonationAmountIq");
+
+        Jid jid = veazzyDonationAmountIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(veazzyDonationAmountIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = veazzyDonationAmountIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Donation Amount error: room not found for JID: " + from);
+            return IQ.createErrorResponse(veazzyDonationAmountIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        logger.info("handleDonationAmountIq condition OK");
+
+        if (conference.handleDonationAmountRequest(jid, veazzyDonationAmountIq.getFrom())) {
+
+            result = IQ.createResultIQ(veazzyDonationAmountIq);
+
+            if (!veazzyDonationAmountIq.getFrom().equals(jid)) {
+
+                VeazzyDonationAmountIq donationAmountUpdate = new VeazzyDonationAmountIq();
+                donationAmountUpdate.setActor(from);
+                donationAmountUpdate.setType(IQ.Type.set);
+                donationAmountUpdate.setTo(jid);
+
+                donationAmountUpdate.setAvatar(veazzyDonationAmountIq.getAvatar());
+                donationAmountUpdate.setCurrency(veazzyDonationAmountIq.getCurrency());
+                donationAmountUpdate.setDonationAmount(veazzyDonationAmountIq.getDonationAmount());
+
+                connection.sendStanza(donationAmountUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    veazzyDonationAmountIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
+        }
+
+        return result;
+    }
+
+    private IQ handleRaiseHandIq(VeazzyRaiseHandIq veazzyRaiseHandIq) {
+
+        logger.info("veazzyRaiseHandIq");
+
+        Jid jid = veazzyRaiseHandIq.getJid();
+
+        if (jid == null) {
+            logger.debug("jid null");
+            return IQ.createErrorResponse(veazzyRaiseHandIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        Jid from = veazzyRaiseHandIq.getFrom();
+        JitsiMeetConferenceImpl conference = getConferenceForMucJid(from);
+        if (conference == null) {
+            logger.debug("Raise Hand error: room not found for JID: " + from);
+            return IQ.createErrorResponse(veazzyRaiseHandIq, XMPPError.getBuilder(
+                    XMPPError.Condition.item_not_found));
+        }
+
+        IQ result;
+
+        logger.info("handleRaiseHandIq condition OK");
+
+        if (conference.handleRaiseHandRequest(jid, veazzyRaiseHandIq.getFrom())) {
+
+            result = IQ.createResultIQ(veazzyRaiseHandIq);
+
+            if (!veazzyRaiseHandIq.getFrom().equals(jid)) {
+
+                VeazzyRaiseHandIq raiseHandUpdate = new VeazzyRaiseHandIq();
+                raiseHandUpdate.setActor(from);
+                raiseHandUpdate.setType(IQ.Type.set);
+                raiseHandUpdate.setTo(jid);
+
+                raiseHandUpdate.setParticipantToRaiseHand(veazzyRaiseHandIq.getParticipantToRaiseHand());
+                raiseHandUpdate.setRaiseHandStatus(veazzyRaiseHandIq.getRaiseHandStatus());
+
+                connection.sendStanza(raiseHandUpdate);
+            }
+        } else {
+            result = IQ.createErrorResponse(
+                    veazzyRaiseHandIq,
+                    XMPPError.getBuilder(XMPPError.Condition.internal_server_error));
         }
 
         return result;

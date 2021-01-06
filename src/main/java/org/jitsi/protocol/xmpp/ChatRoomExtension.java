@@ -30,7 +30,7 @@ import java.util.*;
  *
  * @author Pawel Domas
  */
-public interface ChatRoom2
+public interface ChatRoomExtension
     extends ChatRoom
 {
     /**
@@ -81,4 +81,17 @@ public interface ChatRoom2
                         Collection<ExtensionElement> toAdd);
 
     void setConference(JitsiMeetConference conference);
+
+    /*void setVeazzyRoomStatus(boolean veazzyRoomStatus);
+
+    boolean getVeazzyRoomStatus();
+
+    void setVeazzyRoomManagerId(String veazzyRoomManagerId);
+
+    String getVeazzyRoomManagerId();
+
+    void setVeazzyMainScreenParticipantId(String veazzyParticipantId);
+
+    String getVeazzyMainScreenParticipantId();*/
+
 }

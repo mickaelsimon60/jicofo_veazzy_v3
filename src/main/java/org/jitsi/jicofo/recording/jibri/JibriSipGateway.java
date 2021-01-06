@@ -249,13 +249,13 @@ public class JibriSipGateway
             "Publishing new jibri-sip-call-state: " + session.getSipAddress()
                 + sipCallState.toXML() + " in: " + conference.getRoomName());
 
-        ChatRoom2 chatRoom2 = conference.getChatRoom();
+        ChatRoomExtension chatRoomExtension = conference.getChatRoom();
 
         // Publish that in the presence
-        if (chatRoom2 != null)
+        if (chatRoomExtension != null)
         {
             LinkedList<ExtensionElement> toRemove = new LinkedList<>();
-            for (ExtensionElement ext : chatRoom2.getPresenceExtensions())
+            for (ExtensionElement ext : chatRoomExtension.getPresenceExtensions())
             {
                 // Exclude all that do not match
                 if (ext instanceof  SipCallState
@@ -268,7 +268,7 @@ public class JibriSipGateway
             ArrayList<ExtensionElement> newExt = new ArrayList<>();
             newExt.add(sipCallState);
 
-            chatRoom2.modifyPresence(toRemove, newExt);
+            chatRoomExtension.modifyPresence(toRemove, newExt);
         }
     }
 }
