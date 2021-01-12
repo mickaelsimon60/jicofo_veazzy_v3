@@ -83,7 +83,7 @@ public class VeazzyParticipantStatus {
     }
 
     /**
-     * @param participantStatus the participantStatus to set
+     * @param status the participantStatus to set
      */
     public void setStatus(int status) {
         this.status = status;

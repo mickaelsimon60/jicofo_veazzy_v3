@@ -419,7 +419,8 @@ public class JDBCPostgreSQL {
             if(pStatement != null) {
                 try {
                     pStatement.setInt(1, participantStatus.getStatus());
-                    pStatement.setTimestamp(2, participantStatus.getLeaveDate() != null ? getTimestamp(participantStatus.getLeaveDate()) : null);
+                    pStatement.setTimestamp(2, participantStatus.getLeaveDate() != null ?
+                            getTimestamp(participantStatus.getLeaveDate()) : null);
                     pStatement.setString(3, participantStatus.getLeaveReason());
                     pStatement.addBatch();
                 } catch (SQLException ex) {
