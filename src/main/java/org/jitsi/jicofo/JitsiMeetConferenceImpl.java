@@ -2409,8 +2409,10 @@ public class JitsiMeetConferenceImpl
         logger.info("Will " + (doBlind ? "blind" : "unblind") + " " + toBeBlindedJid + " on behalf of " + fromJid);
 
         BridgeSession bridgeSession = findBridgeSession(participant);
+        ColibriConferenceIQ participantChannels = participant.getColibriChannelsInfo();
         boolean succeeded = bridgeSession != null
-                && bridgeSession.colibriConference.blindParticipant(participant.getColibriChannelsInfo(), doBlind);
+                && participantChannels != null
+                && bridgeSession.colibriConference.blindParticipant(participantChannels, doBlind);
 
         if (succeeded) {
             participant.setBlinded(doBlind);
@@ -2687,6 +2689,13 @@ public class JitsiMeetConferenceImpl
     public boolean handleRaiseHandRequest(Jid jid, Jid fromJid) {
 
         logger.info("handleRaiseHandRequest");
+
+        return true;
+    }
+
+    public boolean handleVisitorRequest(Jid jid, Jid fromJid) {
+
+        logger.info("handleVisitorRequest");
 
         return true;
     }
